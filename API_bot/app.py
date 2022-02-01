@@ -14,15 +14,9 @@ def recv_offer_data():
     return
 
 def call_offers():
-    expiration_time = 1
-    collection_count = 500
-    count = 0
+    expiration_time = 4
     while(True):
-        current_index = (count * 50)
-        count += 1
-        if current_index > collection_count:
-            current_index = 0
-        os.system("node make_offers.js {0} {1}".format(expiration_time, current_index))
+        os.system("node make_offers.js {0}".format(expiration_time))
         time.sleep(expiration_time * 60 * 60 + 30) # 30 secs to run make_offers
 
 def main():

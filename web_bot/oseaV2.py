@@ -28,8 +28,8 @@ load_dotenv()
 
 TEST_NET = False
 
-OSEA_URL = "https://testnets.opensea.io/" if TEST_NET else "https://opensea.io/"
-COLL_URL = "https://opensea.io/assets/0x90ca8a3eb2574f937f514749ce619fdcca187d45/2787" if TEST_NET else "https://opensea.io/collection/gamblingapes"
+OSEA_URL = "https://opensea.io/"
+COLL_URL = "https://opensea.io/collection/lazy-lions"
 RECOVERY = file_crypt.decrypt_file_contents("encrypted.txt")
 PASS = os.getenv('PASS')
 META_PATH = "/Users/colet/Library/Application Support/Google/Chrome/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/1.0.0.6_0/extension_10_8_1_0.crx"
@@ -78,16 +78,22 @@ def date_data():
     hour = today.strftime("%H")
     minute = today.strftime("%M")
     month = today.strftime('%m')
+    search_day = day
     time_condition = int(hour) == 23 and int(minute) >= 30
-    month_condition = day == month_dict[int(month)][1]
+    month_condition = int(day) == month_dict[int(month)][1]
+    edge_case = False
     ### This is only worth doing if you acutally implment the clicking of the next area into the next month
-    if time_condition and month_condition:
-        day = 1
+    print("MONTH", month, "SHOULD BE 1")
+    if month_condition:
+        search_day = 1
+        edge_case = True
+    elif month_condition and time_condition:
         month = str(int(month) + 1)
     elif time_condition:
         day = str(int(day) + 1)
+        search_day = day
     date_str = f"{month_dict[int(month)][0]} {day}"
-    return day, date_str
+    return search_day, date_str, edge_case
 
 def metaLogIn(driver, osea, metamask_window):
     # This function will log into metamask and then connect it with OpenSea
@@ -152,123 +158,90 @@ def metaLogIn(driver, osea, metamask_window):
     driver.find_element(By.XPATH, '//button[text()="Connect"]').click()
     logging.info("Signed into Metamask")
 
-def place_bid(driver, osea, metamask_window):
-    # function that from a collection's homepage, searches a number, clicks on correct nft, makes a bid lasting 1 day and signs the transaction
-    error = False
-    try:
-        keyword = str(randint(1,7777))
-        # make sure we haven't already bid on this ape
-        while(keyword in BID_DB):
-            keyword = str(randint(1,100))
-
-        driver.execute_script(f"window.scrollBy(0,{randint(400, 700)})","")
-        # collection search bar
-        sleep(randint(3,5))
-        search = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, '//*[@id="main"]/div/div/div[3]/div/div/div/div[3]/div[1]/div[1]/input'))
-        )
-        search.send_keys(keyword)
-        search.send_keys(Keys.RETURN)
-        logging.info("Searching ape number")
-        # find searched image
-        alt_str = "Gambling Ape #" + keyword
-        scroll_count = 0
-        scroll_thresh = 50 if int(keyword) < 10 else 20 # way more results for single digit searches
-        sleep(randint(1,3)) # wait after searching
-        searches = 0 
-        while True:
-            try:
-                WebDriverWait(driver, 2).until(
-                    EC.presence_of_element_located((By.XPATH, f'//img[@alt="{alt_str}"]'))
-                ).click()
-                logging.info("Found searched ape")
-                break
-            except:
-                # check if no images are loading
-                not_loading = True
-                images = driver.find_elements(By.TAG_NAME, 'img')
-                for image in images:
-                    if "Gambling Ape #" in image.get_attribute("alt"):
-                        not_loading = False
-                        break
-                if not_loading:
-                    print("IMAGES NOT LOADING!")
-                    sleep(60)
-                if searches > 2:
-                    print("ERROR: Bad Search")
-                    sleep(randint(45,75))
-                    return False
-                if scroll_count > scroll_thresh:
-                    searches += 1
-                    scroll_count = 0
-                    # item can't be found
-                    print("Item:", alt_str, "can't be found.")
-                    keyword = str(randint(1,7777))
-                    while(keyword in BID_DB):
-                        keyword = str(randint(1,7777))
-                    for i in range(4):
-                        search.send_keys(Keys.BACKSPACE)
-                    search.send_keys(keyword)
-                    search.send_keys(Keys.RETURN)
-                    alt_str = "Gambling Ape #" + keyword
-                driver.execute_script(f"window.scrollBy(0,{randint(700, 1000)})","")
-                scroll_count += 1
-        sleep(randint(1,3))
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]'))
-        ).click()
-        # Get floor price
-        sleep(randint(1,3))
-        api_info = extract_api_info("https://api.opensea.io/collection/gamblingapes", API_DB)
-        amount_bar = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Amount"]'))
-        )
-        # send bid price
-        amount_bar.send_keys(str(round(api_info["floor_price"] * 0.8, 3)))
-        actions = ActionChains(driver)
-        actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="7 days"]')).click()
-        # click on custom date
-        actions.move_by_offset(0, 225).click().perform()
-
-        day, date_str = date_data()
-        driver.find_element(By.XPATH, f'//div[contains(text(),"{date_str}, 2022")]').click()
-        
-        # find button for next day (to make offer time 1 day)
-        day_element = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, f'//button[text()="{str(int(day) + 1)}"]'))
-        )
-
-        actions.move_to_element(day_element).click()
-        actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
-        actions.perform()
-
-        actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
-        actions.perform()
-        logging.info("Offer created")
-
-        window_check = 0
-        while True:
-            sleep(2)
+def find_meta_window(driver, osea, metamask_window):
+    window_check = 0
+    while True:
+        sleep(2)
+        try:
+            WebDriverWait(driver, 2).until(
+                EC.visibility_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]'))
+            )
+            driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
+        except:
             child_windows = driver.window_handles
             if len(child_windows) > 2:
                 for w in child_windows:
                     if w != osea and w != metamask_window:
                         driver.switch_to.window(w)
-                break        
-            elif window_check > 5:
-                print("Can't find metamask tx prompt")
-                raise Exception
-            window_check += 1
+                        return True      
+        if window_check > 5:
+            print("Can't find metamask tx prompt")
+            return False
+        window_check += 1
 
+def place_bid(driver, osea, metamask_window):
+    # function that from a collection's homepage, searches a number, clicks on correct nft, makes a bid lasting 1 day and signs the transaction
+    error = False
+    try:
+        keyword = str(randint(1,10000))
+        # make sure we haven't already bid on this ape
+        while(keyword in BID_DB):
+            keyword = str(randint(1,100))
+        driver.get(f"https://opensea.io/assets/0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0/{keyword}")
+        sleep(randint(3,5))
         WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
+            EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]'))
         ).click()
+        sleep(randint(2,5))
+        api_info = extract_api_info("https://api.opensea.io/collection/gamblingapes", API_DB)
+        amount_bar = WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Amount"]'))
+        )
+        # send bid price
+        # amount_bar.send_keys(str(round(api_info["floor_price"] * 0.8, 3)))
+        amount_bar.send_keys("1.62")
+        actions = ActionChains(driver)
+        actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="7 days"]')).click()
+        # click on custom date
+        actions.move_by_offset(0, 225).click().perform()
+
+        day, date_str, edge_case = date_data()
+
+        print(date_str)
+        driver.find_element(By.XPATH, f'//div[contains(text(),"{date_str}, 2022")]').click()
+        if edge_case:
+            # change month
+            print("EDGE CASE")
+            WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, f'//*[@aria-label="Next month"]'))
+            ).click()
+            WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.XPATH, f'//button[text()="{day}"]'))
+            ).click()
+        else:
+            # find button for next day (to make offer time 1 day)
+            day_element = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//button[text()="{str(int(day) + 1)}"]'))
+            )
+            actions.move_to_element(day_element).click()
+        
+        actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
+        actions.perform()
+
+        actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
+        actions.perform()
+
+        if find_meta_window(driver, osea, metamask_window):
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
+            ).click()
+        
         logging.info("Offer signed")
         driver.switch_to.window(osea)
         sleep(2)
         WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
-        ).click()
+        )
         sleep(randint(1,3))
         logging.info("Successful tx")
         BID_DB[keyword] = datetime.now() # enter successfull bid into database
@@ -286,8 +259,7 @@ def place_bid(driver, osea, metamask_window):
                 print("CLOSED ERRONEOUS WINDOW")
         if error:
             return False
-        else:
-            return True
+        return True
 
 def clean_db(dict_db):
     # checks timestamps of each stored bid and removes if day old
@@ -331,20 +303,13 @@ def main():
     error_time = datetime.now()
     while True:
         driver.switch_to.window(osea)
-        sleep(randint(1,4))
-        driver.get(COLL_URL)
-        logging.info("At collection home page")
         bid_status = place_bid(driver, osea, metamask_window)
         # sleeps or ends bot based on error count
         if not bid_status:
             error_count += 1
+            error_time = datetime.now()
             if error_count > 5:
                 error_reset += 1
-                if (datetime.now() - error_time).total_seconds() > 1800:
-                    error_count = 0
-                    error_reset = 0
-                else:
-                    error_time = datetime.now()
                 if error_reset > 3:
                     print("ERROR: Threshold error reached.")
                     print("Total bids placed:", curr_txs)
@@ -353,25 +318,29 @@ def main():
                     sleep(60)
                     error_count = 0
         else:
+            if (datetime.now() - error_time).total_seconds() > 3600:
+                error_count = 0
             total_txs += 1
             curr_txs += 1
             if total_txs > 1000:
                 print("Total txs sent. Ending program.")
-            elif curr_txs > 200 and not vpn_on:
+            elif curr_txs > 50 and not vpn_on:
                 print("Max curr_txs sent from residential IP. Toggling VPN.")
                 vpn_on = toggleVPN(vpn_on)
                 curr_txs = 0
-            elif curr_txs > 300 and vpn_on:
+            elif curr_txs > 100 and vpn_on:
                 print("Max curr_txs sent from VPN. Toggling residential.")
                 vpn_on = toggleVPN(vpn_on)
+                curr_txs = 0
             
             if curr_txs % 100 == 0:
                 print('"Stretching"')
                 print("Oustanding bids:", bid_count(BID_DB))
+                print("Transaction count:", total_txs)
                 sleep(randint(500, 1000))
             elif curr_txs % 20 == 0:
                 print('"Coffee Break"')
-                print("Transaction count:", curr_txs)
+                print("Transaction count:", total_txs)
                 sleep(randint(60, 120))
             
         

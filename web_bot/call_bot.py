@@ -1,10 +1,10 @@
-# Download the helper library from https://www.twilio.com/docs/python/install
 import os
 from twilio.rest import Client
 import discord
 from dotenv import load_dotenv
 
-
+# So maybe instead of calling me, if it notices a discord noti, it will go check my collected nfts page. If one is there it will automatically list it for sale. 
+# URL for account: https://opensea.io/0xb91d96ca297e06f0db299eb067b236bcf37feb29
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 # load discord object 
@@ -35,6 +35,7 @@ async def on_message(message):
                         to='+15415056058',
                         from_='+14844303657'
                     )
+    
     
 discord_client.run(TOKEN)
 

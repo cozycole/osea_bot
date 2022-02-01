@@ -1,1 +1,12 @@
 node_modules
+test_template
+selen_tut
+.env
+web_bot/encrypted.txt
+web_bot/my_encrypted.txt
+web_bot/test.py
+web_bot/api_db.sqlite
+web_bot/bid_db.sqlite
+web_bot/debug.log
+web_bot/info.log
+web_bot/my_db.sqlite
