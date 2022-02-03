@@ -16,6 +16,7 @@ from sqlitedict import SqliteDict # database
 import logging
 from selenium.webdriver.remote.remote_connection import LOGGER
 import undetected_chromedriver as uc
+
 """ chrome_options = uc.ChromeOptions()
 chrome_options.add_argument("--load-extension=/Users/colet/metamask-chrome-10.8.2")
 driver = uc.Chrome(version=96, options=chrome_options, use_subprocess=True)
@@ -29,7 +30,7 @@ load_dotenv()
 TEST_NET = False
 
 OSEA_URL = "https://opensea.io/"
-COLL_URL = "https://opensea.io/collection/lazy-lions"
+COLL_URL = "https://opensea.io/collection/gamblingapes"
 RECOVERY = file_crypt.decrypt_file_contents("encrypted.txt")
 PASS = os.getenv('PASS')
 META_PATH = "/Users/colet/Library/Application Support/Google/Chrome/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/1.0.0.6_0/extension_10_8_1_0.crx"
@@ -50,7 +51,6 @@ def setUpDriver():
     driver = webdriver.Chrome(service=serv, options=op)
     driver.get(OSEA_URL)
     # driver = uc.Chrome(version=96, options=chrome_options, use_subprocess=True)
-    driver.get(OSEA_URL)
     return driver
 
 def extract_api_info(url, my_dict):
@@ -168,38 +168,68 @@ def find_meta_window(driver, osea, metamask_window):
             )
             driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
         except:
-            child_windows = driver.window_handles
-            if len(child_windows) > 2:
-                for w in child_windows:
-                    if w != osea and w != metamask_window:
-                        driver.switch_to.window(w)
-                        return True      
+            try:
+                WebDriverWait(driver, 2).until(
+                    EC.presence_of_element_located((By.XPATH, '//div[contains(text(), "API ERROR 400:")]'))
+                )
+                print("WALLET BALANCE INSUFFICIENT")
+                return "CRITICAL ERROR"
+            except:
+                child_windows = driver.window_handles
+                if len(child_windows) > 2:
+                    for w in child_windows:
+                        if w != osea and w != metamask_window:
+                            driver.switch_to.window(w)
+                            return True      
         if window_check > 5:
             print("Can't find metamask tx prompt")
             return False
         window_check += 1
 
+def determine_offer(driver, URL):
+    royalty_deduct = 0.925
+    offer_objects = driver.find_elements(By.XPATH, "//div[@class='Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount']")
+    offers = []
+    for offer in offer_objects:
+        # this relies on the fact that offers for the nft are in the format x WETH (COULD BE UNRELIABLE!!)
+        if "WETH" in offer.text:
+            offer_val = float(offer.text.replace("WETH",""))
+            offers.append(offer_val)
+    top_offer = max(offers)
+    api_dict = extract_api_info(URL, API_DB)
+    floor = api_dict["floor_price"]
+    if (len(offers) == 0) or (round(floor * 0.8, 3) > max(offers)):
+        return round(floor * 0.8, 3)
+    # the 7.5% royalties are specific to Gambling Apes
+    print(f"{floor * royalty_deduct} - {top_offer + 0.001} = {(floor * royalty_deduct) - (top_offer + 0.001)} > 0.05 ??")
+    if (floor * royalty_deduct) - (top_offer + 0.001) > 0.06:
+        return top_offer + 0.001 
+
 def place_bid(driver, osea, metamask_window):
     # function that from a collection's homepage, searches a number, clicks on correct nft, makes a bid lasting 1 day and signs the transaction
     error = False
     try:
-        keyword = str(randint(1,10000))
+        keyword = str(randint(1,7777))
         # make sure we haven't already bid on this ape
         while(keyword in BID_DB):
-            keyword = str(randint(1,100))
-        driver.get(f"https://opensea.io/assets/0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0/{keyword}")
-        sleep(randint(3,5))
+            keyword = str(randint(1,7777))
+        bid_url = f"https://opensea.io/assets/0x90ca8a3eb2574f937f514749ce619fdcca187d45/{keyword}"
+        driver.get(bid_url)
+        sleep(randint(2,4))
+        offer = determine_offer(driver, "https://api.opensea.io/collection/gamblingapes")
+        if not offer:
+            sleep(randint(3,5))
+            return "NOT PROFITABLE"
         WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]'))
         ).click()
-        sleep(randint(2,5))
-        api_info = extract_api_info("https://api.opensea.io/collection/gamblingapes", API_DB)
+        sleep(randint(2,4))
         amount_bar = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Amount"]'))
         )
         # send bid price
         # amount_bar.send_keys(str(round(api_info["floor_price"] * 0.8, 3)))
-        amount_bar.send_keys("1.62")
+        amount_bar.send_keys(str(offer))
         actions = ActionChains(driver)
         actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="7 days"]')).click()
         # click on custom date
@@ -230,16 +260,20 @@ def place_bid(driver, osea, metamask_window):
 
         actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
         actions.perform()
-
-        if find_meta_window(driver, osea, metamask_window):
+        window_found = find_meta_window(driver, osea, metamask_window)
+        if window_found == "CRITICAL ERROR":
+            return "CRITICAL ERROR"
+        elif window_found:
             WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
             ).click()
-        
+        else:
+            return False
         logging.info("Offer signed")
         driver.switch_to.window(osea)
         sleep(2)
-        WebDriverWait(driver, 10).until(
+
+        WebDriverWait(driver, 8).until(
             EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
         )
         sleep(randint(1,3))
@@ -304,6 +338,11 @@ def main():
     while True:
         driver.switch_to.window(osea)
         bid_status = place_bid(driver, osea, metamask_window)
+        if bid_status == "NOT PROFITABLE":
+            continue
+        if bid_status == "CRITICAL ERROR":
+            print("Critical Error detected. Shutting off bot.")
+            return
         # sleeps or ends bot based on error count
         if not bid_status:
             error_count += 1
