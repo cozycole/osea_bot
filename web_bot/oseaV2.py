@@ -9,7 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.action_chains import ActionChains
 from dotenv import load_dotenv
 from random import randint
-from datetime import datetime
+from datetime import date, datetime
 import requests 
 import file_crypt
 from sqlitedict import SqliteDict # database
@@ -83,7 +83,6 @@ def date_data():
     month_condition = int(day) == month_dict[int(month)][1]
     edge_case = False
     ### This is only worth doing if you acutally implment the clicking of the next area into the next month
-    print("MONTH", month, "SHOULD BE 1")
     if month_condition:
         search_day = 1
         edge_case = True
@@ -92,7 +91,7 @@ def date_data():
     elif time_condition:
         day = str(int(day) + 1)
         search_day = day
-    date_str = f"{month_dict[int(month)][0]} {day}"
+    date_str = f"{month_dict[int(month)][0]} {int(day)}"
     return search_day, date_str, edge_case
 
 def metaLogIn(driver, osea, metamask_window):
@@ -219,7 +218,7 @@ def place_bid(driver, osea, metamask_window):
         offer = determine_offer(driver, "https://api.opensea.io/collection/gamblingapes")
         if not offer:
             sleep(randint(3,5))
-            return "NOT PROFITABLE"
+            # return "NOT PROFITABLE"
         WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]'))
         ).click()
@@ -229,16 +228,19 @@ def place_bid(driver, osea, metamask_window):
         )
         # send bid price
         # amount_bar.send_keys(str(round(api_info["floor_price"] * 0.8, 3)))
-        amount_bar.send_keys(str(offer))
+        # amount_bar.send_keys(str(offer))
+        amount_bar.send_keys("0.45")
         actions = ActionChains(driver)
-        actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="7 days"]')).click()
+        actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="3 days"]')).click()
         # click on custom date
-        actions.move_by_offset(0, 225).click().perform()
-
+        actions.move_by_offset(0, 250).click().perform()
         day, date_str, edge_case = date_data()
-
-        print(date_str)
-        driver.find_element(By.XPATH, f'//div[contains(text(),"{date_str}, 2022")]').click()
+        date_element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, f'//*[contains(text(),"{date_str}, 2022")]'))
+        )
+        curr_date = date_element.text
+        actions.move_to_element(date_element).click()
+        actions.perform()
         if edge_case:
             # change month
             print("EDGE CASE")
@@ -246,20 +248,35 @@ def place_bid(driver, osea, metamask_window):
                 EC.presence_of_element_located((By.XPATH, f'//*[@aria-label="Next month"]'))
             ).click()
             WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, f'//button[text()="{day}"]'))
+            EC.presence_of_element_located((By.XPATH, f'//button[text()="{int(day)}"]'))
+            ).click()
+        input_element = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//input[@id="start-time"]'))
+        ).click()
+        input_element = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//input[@id="start-time"]'))
+        )
+        # logic to place 12 hour bids
+        if "PM" in curr_date:
+            print("Got here 1")
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys('a')
+            print("Got here 2")
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//button[text()="{int(day)+1}"]'))
             ).click()
         else:
-            # find button for next day (to make offer time 1 day)
-            day_element = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, f'//button[text()="{str(int(day) + 1)}"]'))
-            )
-            actions.move_to_element(day_element).click()
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys('p')
+        
         
         actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
-        actions.perform()
 
         actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
         actions.perform()
+        print("MADE OFFER CLICKED")
         window_found = find_meta_window(driver, osea, metamask_window)
         if window_found == "CRITICAL ERROR":
             return "CRITICAL ERROR"
@@ -273,7 +290,7 @@ def place_bid(driver, osea, metamask_window):
         driver.switch_to.window(osea)
         sleep(2)
 
-        WebDriverWait(driver, 8).until(
+        WebDriverWait(driver, 5).until(
             EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
         )
         sleep(randint(1,3))
