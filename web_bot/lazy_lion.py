@@ -1,4 +1,5 @@
 import os
+import typing
 from time import sleep
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -20,30 +21,34 @@ import undetected_chromedriver as uc
 chrome_options.add_argument("--load-extension=/Users/colet/metamask-chrome-10.8.2")
 driver = uc.Chrome(version=96, options=chrome_options, use_subprocess=True)
 driver.get('https://opensea.io/assets/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/5790') """
-LOGGER.setLevel(logging.INFO)
-# ssos.remove("info.log")
-logging.basicConfig(filename='info.log', level=logging.INFO)
+LOGGER.setLevel(logging.ERROR)
+# Need to create separate error logs for each process
+suffix = str(os.getpid())
+path_name = R"C:\Users\ashun\osea_bot\web_bot\error" + suffix + ".log"
+if os.path.exists(path_name):
+    os.remove(path_name)
+logging.basicConfig(filename=f"error{suffix}.log", level=logging.ERROR)
 
 load_dotenv()
 
 TEST_NET = False
 
 OSEA_URL = "https://opensea.io/"
-COLL_URL = "https://opensea.io/collection/gamblingapes"
+COLL_URL = "https://opensea.io/collection/lazy-lions"
 RECOVERY = file_crypt.decrypt_file_contents("encrypted.txt")
 PASS = os.getenv('PASS')
 META_PATH = R"C:\Users\ashun\AppData\Local\Google\Chrome\User Data\Default\Extensions\nmmhkkegccagdldgiimedpiccmgmieda\extension_10_9_0_0.crx"
 BID_DB = SqliteDict('./bid_db.sqlite', autocommit=True)
 API_DB = SqliteDict('./api_db.sqlite', autocommit=True)
 
-def setUpDriver():
+def setUpDriver() -> webdriver.Chrome:
     PATH = R"C:\Users\ashun\Documents\chromedriver"
     serv = Service(PATH)
     op = webdriver.ChromeOptions()
     op.add_argument("--no-sandbox")
     op.add_argument("--window-size=1920,1080")
-    op = uc.ChromeOptions()
-    op.add_extension(META_PATH)
+    # op = uc.ChromeOptions()
+    op.add_extension(META_PATH) 
     # chrome_options.add_argument("--load-extension=/Users/colet/metamask-chrome-10.8.2")
     prefs = {"profile.managed_default_content_settings.images": 2}
     op.add_experimental_option("prefs", prefs)
@@ -57,7 +62,7 @@ def extract_api_info(url, my_dict):
     # Returns dict with pertinent api information (name, floor price and stats). Cache resets every 3 hours.
     # "https://api.opensea.io/collection/gamblingapes"
     # if an api entry is present and not stale, return what's stored else update it
-    if "API_INFO" in my_dict and (datetime.now() - my_dict["API_INFO"][0]).total_seconds() < 3600:
+    if "API_INFO" in my_dict and (datetime.now() - my_dict["API_INFO"][0]).total_seconds() < 900:
         return my_dict["API_INFO"][1]
     else:
         api_dict = {}
@@ -92,7 +97,6 @@ def date_data():
     elif time_condition:
         search_day = str(int(day) + 1)
     date_str = f"{month_dict[int(month)][0]} {int(day)}"
-    print(date_str)
     return search_day, date_str, edge_case
 
 def metaLogIn(driver, osea, metamask_window):
@@ -144,7 +148,8 @@ def metaLogIn(driver, osea, metamask_window):
     MASK_IMG = "https://testnets.opensea.io/static/images/logos/metamask-alternative.png" if TEST_NET else "https://opensea.io/static/images/logos/metamask-alternative.png"
     for image in images:
         if image.get_attribute('src') == MASK_IMG:
-            image.click()
+            actions = ActionChains(driver)
+            actions.move_to_element(image).click().perform()
             break
     sleep(3) # previous click spawns new metamask window
     child_windows = driver.window_handles
@@ -161,120 +166,161 @@ def metaLogIn(driver, osea, metamask_window):
 def find_meta_window(driver, osea, metamask_window):
     window_check = 0
     while True:
-        sleep(2)
+        sleep(1)
         try:
-            WebDriverWait(driver, 2).until(
-                EC.visibility_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]'))
+            WebDriverWait(driver, 1).until(
+                EC.presence_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]'))
             )
             driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
             print("FAILED TO FETCH")
         except:
-            try:
-                WebDriverWait(driver, 2).until(
-                EC.visibility_of_element_located((By.XPATH, '//div[contains(text(),"API Error 400:")]'))
-                )
-                print("WALLET BALANCE INSUFFICIENT")
-                return "CRITICAL ERROR"
-            except:
-                child_windows = driver.window_handles
-                if len(child_windows) > 2:
-                    for w in child_windows:
-                        if w != osea and w != metamask_window:
-                            driver.switch_to.window(w)
-                            return True      
+            child_windows = driver.window_handles
+            if len(child_windows) > 2:
+                for w in child_windows:
+                    if w != osea and w != metamask_window:
+                        driver.switch_to.window(w)
+                        return True      
         if window_check > 5:
-            print("Can't find metamask tx prompt")
+            logging.error("Can't find metamask tx prompt")
             return False
         window_check += 1
 
+def determine_offer(driver, URL):
+    royalty_deduct = 0.935
+    profit_margin = 0.08
+    offer_objects = driver.find_elements(By.XPATH, "//div[@class='Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount']")
+    offers = []
+    for offer in offer_objects:
+        # this relies on the fact that offers for the nft are in the format x WETH (COULD BE UNRELIABLE!!)
+        if "WETH" in offer.text:
+            offer_val = float(offer.text.replace("WETH",""))
+            offers.append(offer_val)
+    api_dict = extract_api_info(URL, API_DB)
+    floor = api_dict["floor_price"]
+    if (len(offers) == 0):
+        return round(floor * 0.8, 3)
+    if (round(floor * 0.8, 3) > max(offers)):
+        return round(floor * 0.8, 3)
+    # the 7.5% royalties are specific to Gambling Apes
+    top_offer = max(offers)
+    print(f"{floor * royalty_deduct} - {top_offer + 0.001} = {(floor * royalty_deduct) - (top_offer + 0.001)} > 0.07 ??")
+    if (floor * royalty_deduct) - (top_offer + 0.001) > profit_margin:
+        return round(top_offer + 0.001, 4) 
+
 def place_bid(driver, osea, metamask_window):
     # function that from a collection's homepage, searches a number, clicks on correct nft, makes a bid lasting 1 day and signs the transaction
-    error = False
     try:
-        keyword = str(randint(1,7777))
+        keyword = str(randint(1,9999))
         # make sure we haven't already bid on this ape
         while(keyword in BID_DB):
-            keyword = str(randint(1,7777))
-        driver.get(f"https://opensea.io/assets/0x90ca8a3eb2574f937f514749ce619fdcca187d45/{keyword}")
-        sleep(randint(3,5))
+            keyword = str(randint(1,9999))
+        bid_url = f"https://opensea.io/assets/0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0/{keyword}"
+        driver.get(bid_url)
+        sleep(randint(2,4))
+        offer = determine_offer(driver, "https://api.opensea.io/collection/lazy-lions")
+        if not offer:
+            sleep(randint(1,3))
+            logging.error("NOT PROFITABLE")
+            return "NOT PROFITABLE"
         WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]'))
         ).click()
-        sleep(randint(2,5))
-        api_info = extract_api_info("https://api.opensea.io/collection/gamblingapes", API_DB)
+        sleep(randint(2,4))
         amount_bar = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Amount"]'))
         )
         # send bid price
         #amount_bar.send_keys(str(round(api_info["floor_price"] * 0.8, 3)))
-        amount_bar.send_keys("0.539")
+        amount_bar.send_keys(str(offer))
         actions = ActionChains(driver)
-        actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="7 days"]')).click()
+        actions.move_to_element(driver.find_element(By.XPATH, '//input[@value="3 days"]')).click()
         # click on custom date
-        actions.move_by_offset(0, 225).click().perform()
-
+        actions.move_by_offset(0, 250).click().perform()
         day, date_str, edge_case = date_data()
-
-        print(date_str)
-        driver.find_element(By.XPATH, f'//div[contains(text(),"{date_str}, 2022")]').click()
+        date_element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, f'//*[contains(text(),"{date_str}, 2022")]'))
+        )
+        curr_date = date_element.text
+        actions.move_to_element(date_element).click()
+        actions.perform()
         if edge_case:
             # change month
+            print("EDGE CASE")
             WebDriverWait(driver, 3).until(
                 EC.presence_of_element_located((By.XPATH, f'//*[@aria-label="Next month"]'))
             ).click()
             WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, f'//button[text()="{day}"]'))
+            EC.presence_of_element_located((By.XPATH, f'//button[text()="{int(day)}"]'))
+            ).click()
+        input_element = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//input[@id="start-time"]'))
+        ).click()
+        input_element = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//input[@id="start-time"]'))
+        )
+        # logic to place 12 hour bids
+        if "PM" in curr_date:
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys('a')
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, f'//button[text()="{int(day)+1}"]'))
             ).click()
         else:
-            # find button for next day (to make offer time 1 day)
-            day_element = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, f'//button[text()="{str(int(day) + 1)}"]'))
-            )
-            actions.move_to_element(day_element).click()
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys(Keys.RIGHT)
+            input_element.send_keys('p')
         
+        
+
         actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
         actions.perform()
 
         actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
         actions.perform()
         window_found = find_meta_window(driver, osea, metamask_window)
-        if window_found == "CRITICAL ERROR":
-            return window_found
         if window_found:
             WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
             ).click()
         else:
             raise Exception
-        logging.info("Offer signed")
         driver.switch_to.window(osea)
-        sleep(2)
-        WebDriverWait(driver, 10).until(
-            EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
-        )
+        sleep(1)
+        while True:
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
+                )
+                break
+            except:
+                element = WebDriverWait(driver, 10).until(
+                    EC.visibility_of_element_located((By.XPATH, '//*[contains(text(), "API Error 400")]'))
+                )
+                logging.error(element.text)
+                return "CRITICAL ERROR"
         sleep(randint(1,3))
         BID_DB[keyword] = datetime.now() # enter successfull bid into database
+        return True
     except Exception as e:
         print('ERROR:', e)
-        error = True
+        logging.error(e)
         sleep(randint(4,7))
+        return False
     finally:
         # Clean up any excess windows.
         for w in driver.window_handles:
             if w != osea and w != metamask_window:
                 driver.switch_to.window(w)
                 driver.close()
-                print("CLOSED ERRONEOUS WINDOW")
-        if error:
-            return False
-        return True
+                logging.error("CLOSED ERRONEOUS WINDOW")
 
 def clean_db(dict_db):
     # checks timestamps of each stored bid and removes if day old
     now = datetime.now()
     for key, value in dict_db.iteritems():
         duration = now - value
-        if duration.total_seconds() > 86400:
+        if duration.total_seconds() > 86400/2:
             del dict_db[key]
 
 def bid_count(dict_db):
@@ -314,20 +360,25 @@ def main():
         bid_status = place_bid(driver, osea, metamask_window)
         # sleeps or ends bot based on error count
         if bid_status == "CRITICAL ERROR":
-            print("Critical Error detected. Shutting off bot.")
+            logging.error("Critical Error detected. Shutting off bot.")
+            logging.error(datetime.now().strftime("%H:%M:%S"))
             return
-        if not bid_status:
+        elif bid_status == "NOT PROFITABLE":
+            continue
+        elif not bid_status:
+            # 5 errors in a row causes error reset
+            # 3 error resets end progra
             error_count += 1
-            error_time = datetime.now()
             if error_count > 4:
                 error_reset += 1
-                if error_reset > 10:
-                    print("ERROR: Threshold error reached.")
-                    print("Total bids placed:", curr_txs)
-                    return
+                if error_reset > 2:
+                    logging.error("ERROR: Error threshold reached.")
+                    logging.error(f"Total bids placed: {curr_txs}")
+                    logging.error("Hibernating for 30 minutes")
+                    sleep(1800)
                 else:
                     try:
-                        WebDriverWait.until(
+                        WebDriverWait(driver, 5).until(
                             EC.presence_of_element_located((By.XPATH, f'//*[contains(text(),"Error 504")]')
                         ))
                         sleep(700)
@@ -335,18 +386,17 @@ def main():
                         sleep(60)
                         error_count = 0
         else:
-            if (datetime.now() - error_time).total_seconds() > 3600:
-                error_count = 0
+            error_count = 0
             total_txs += 1
             curr_txs += 1
-            if total_txs > 1000:
-                print("Total txs sent. Ending program.")
-            if curr_txs % 100 == 0:
+            # if total_txs > 1000:
+            #     print("Total txs sent. Ending program.")
+            if curr_txs % 200 == 0:
                 print('"Stretching"')
                 print("Oustanding bids:", bid_count(BID_DB))
                 print("Transaction count:", total_txs)
                 sleep(randint(500, 1000))
-            elif curr_txs % 20 == 0:
+            elif curr_txs % 30 == 0:
                 print('"Coffee Break"')
                 print("Transaction count:", total_txs)
                 sleep(randint(60, 120))
