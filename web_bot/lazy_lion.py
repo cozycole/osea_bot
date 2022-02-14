@@ -1,3 +1,4 @@
+from distutils.log import error
 import os
 import typing
 from time import sleep
@@ -46,7 +47,7 @@ def setUpDriver() -> webdriver.Chrome:
     serv = Service(PATH)
     op = webdriver.ChromeOptions()
     op.add_argument("--no-sandbox")
-    op.add_argument("--window-size=1920,1080")
+    # op.add_argument("--window-size=1920,1080")
     # op = uc.ChromeOptions()
     op.add_extension(META_PATH) 
     # chrome_options.add_argument("--load-extension=/Users/colet/metamask-chrome-10.8.2")
@@ -99,7 +100,7 @@ def date_data():
     date_str = f"{month_dict[int(month)][0]} {int(day)}"
     return search_day, date_str, edge_case
 
-def metaLogIn(driver, osea, metamask_window):
+def meta_login(driver, osea, metamask_window):
     # This function will log into metamask and then connect it with OpenSea
     # Wallet details
     WebDriverWait(driver, 5).until(
@@ -163,31 +164,48 @@ def metaLogIn(driver, osea, metamask_window):
     driver.find_element(By.XPATH, '//button[text()="Connect"]').click()
     logging.info("Signed into Metamask")
 
-def find_meta_window(driver, osea, metamask_window):
+def find_sign_meta_window(driver, osea, metamask_window):
     window_check = 0
+    sleep(2)
     while True:
-        sleep(1)
         try:
-            WebDriverWait(driver, 1).until(
+            WebDriverWait(driver, 2).until(
                 EC.presence_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]'))
             )
             driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
-            print("FAILED TO FETCH")
+            logging.error("FAILED TO FETCH! RECLICKED OFFER BUTTON")
         except:
             child_windows = driver.window_handles
             if len(child_windows) > 2:
                 for w in child_windows:
                     if w != osea and w != metamask_window:
                         driver.switch_to.window(w)
-                        return True      
-        if window_check > 5:
+                        try:
+                            # Sometimes has a contract that needs to be signed.
+                            WebDriverWait(driver, 1).until(
+                                EC.presence_of_element_located((By.XPATH, '//*[contains(text(), "Wyvern Exchange Contract")]'))
+                            )
+                            WebDriverWait(driver, 2).until(
+                                EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
+                            ).click()
+                            logging.error("Wyvern Exchange Pop-Up")
+                            driver.switch_to.window(osea)
+                            driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
+                            continue
+                        except:
+                            WebDriverWait(driver, 1).until(
+                                EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
+                            ).click()
+                            driver.switch_to.window(osea)
+                            return True
+        if window_check > 3:
             logging.error("Can't find metamask tx prompt")
             return False
         window_check += 1
 
 def determine_offer(driver, URL):
     royalty_deduct = 0.935
-    profit_margin = 0.08
+    profit_margin = 0.1
     offer_objects = driver.find_elements(By.XPATH, "//div[@class='Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount']")
     offers = []
     for offer in offer_objects:
@@ -271,30 +289,24 @@ def place_bid(driver, osea, metamask_window):
             input_element.send_keys(Keys.RIGHT)
             input_element.send_keys('p')
         
-        
-
         actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
         actions.perform()
 
         actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
         actions.perform()
-        window_found = find_meta_window(driver, osea, metamask_window)
-        if window_found:
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
-            ).click()
-        else:
+        window_found = find_sign_meta_window(driver, osea, metamask_window)
+        # if the signing window could not be found
+        if not window_found:
             raise Exception
         driver.switch_to.window(osea)
-        sleep(1)
         while True:
             try:
-                WebDriverWait(driver, 10).until(
+                WebDriverWait(driver, 2).until(
                     EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
                 )
                 break
             except:
-                element = WebDriverWait(driver, 10).until(
+                element = WebDriverWait(driver, 2).until(
                     EC.visibility_of_element_located((By.XPATH, '//*[contains(text(), "API Error 400")]'))
                 )
                 logging.error(element.text)
@@ -330,18 +342,9 @@ def bid_count(dict_db):
         out_bids += 1
     return out_bids
 
-def toggleVPN(vpn_state):
-    if vpn_state:
-        os.system("osascript vpn_disconnect.scpt")
-    else:
-        os.system("osascript vpn_connect.scpt")
-    sleep(5)
-    return not vpn_state
-
 def main():
     driver = setUpDriver()
     driver.implicitly_wait(2)
-    vpn_on = False
     print("Current bids:", bid_count(BID_DB))
     osea = driver.current_window_handle
     child_windows = driver.window_handles
@@ -351,10 +354,9 @@ def main():
             driver.switch_to.window(w)
             metamask_window = w
     # must be in the metamask window before calling
-    metaLogIn(driver, osea, metamask_window)
+    meta_login(driver, osea, metamask_window)
     driver.switch_to.window(osea)
     error_count = error_reset = curr_txs = total_txs = 0
-    error_time = datetime.now()
     while True:
         driver.switch_to.window(osea)
         bid_status = place_bid(driver, osea, metamask_window)
@@ -367,7 +369,7 @@ def main():
             continue
         elif not bid_status:
             # 5 errors in a row causes error reset
-            # 3 error resets end progra
+            # 3 error resets causes 30 min hibernation
             error_count += 1
             if error_count > 4:
                 error_reset += 1
@@ -377,14 +379,8 @@ def main():
                     logging.error("Hibernating for 30 minutes")
                     sleep(1800)
                 else:
-                    try:
-                        WebDriverWait(driver, 5).until(
-                            EC.presence_of_element_located((By.XPATH, f'//*[contains(text(),"Error 504")]')
-                        ))
-                        sleep(700)
-                    except:
-                        sleep(60)
-                        error_count = 0
+                    sleep(60)
+                    error_count = 0
         else:
             error_count = 0
             total_txs += 1
