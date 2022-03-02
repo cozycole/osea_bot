@@ -2,6 +2,8 @@ import getpass
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.padding import PKCS7
+from dotenv import load_dotenv
+import os
 
 def encrypt_pass(file_str):
     digest = hashes.Hash(hashes.SHA256())
@@ -23,7 +25,7 @@ def encrypt_pass(file_str):
     
 
 def decrypt_file_contents(file_str):
-    while True:
+    """ while True:
         try:
             digest = hashes.Hash(hashes.SHA256())
             password = getpass.getpass('Password:')
@@ -35,4 +37,15 @@ def decrypt_file_contents(file_str):
             decryptor = cipher.decryptor()
             return decryptor.update(bytes.fromhex(contents)).decode()
         except:
-            print("Incorrect Password")
+            print("Incorrect Password") """
+    load_dotenv()
+    password = os.getenv("PASS2")
+    digest = hashes.Hash(hashes.SHA256())
+    # password = getpass.getpass('Password:')
+    digest.update(password.encode('ascii'))
+    init_vec = bytes(b'\x9a3\x8a*\xce{Zpu\xe0W\xc0\x19i2\xc5')
+    cipher = Cipher(algorithms.AES(digest.finalize()), modes.CFB(init_vec))
+    decrypt_file = open(file_str, "r")
+    contents = decrypt_file.read()
+    decryptor = cipher.decryptor()
+    return decryptor.update(bytes.fromhex(contents)).decode()
