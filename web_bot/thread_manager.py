@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from time import sleep
 import file_crypt
 import sale_monitor as sm
-import logging
 
 # usage: python thread_manager.py [-h] [--slug SLUG] [--nthread NTHREAD] [--bidtime BIDTIME]
 ########################################################################
@@ -19,7 +18,7 @@ import logging
 
 collection_dict = {
     "chick" : ("the-crypto-chicks", 0.925, "0x1981cc36b59cffdd24b01cc5d698daa75e367e04"),
-    "lion" : ("lazy-lions", 0.935, "0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0"),
+    "lion" : ("lazy-lions", 0.905, "0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0"),
     "gape" : ("gamblingapes", 0.925, "0x90ca8a3eb2574f937f514749ce619fdcca187d45")
 }
 
@@ -65,7 +64,7 @@ def main():
             print("SALE DETECTED!")
             recovery = file_crypt.decrypt_file_contents("encrypted.txt")
             password = os.getenv('PASS')
-            driver = bidder.setUpDriver()
+            driver = bidder.setup_secret_driver()
             osea = driver.current_window_handle
             change = False
             while not change:
@@ -75,7 +74,7 @@ def main():
                         change = True
             # Now in metamask window
             bidder.meta_login(driver, password, recovery)
-            print("Converting WETH") # This should cause threads to quit
+            print("Converting WETH") # This should cause threads to quit due to an outstanding balance error
             sm.convert_to_ETH(driver, driver.current_window_handle)
             print("Waiting for threads to join")
             for tid in tids:
@@ -93,5 +92,6 @@ def main():
         if threads_dead:
             print("All threads have terminated")
             return
+
 if __name__ == "__main__":
     main()

@@ -17,10 +17,15 @@ from sqlitedict import SqliteDict # database
 import logging
 import undetected_chromedriver as uc
 import threading
-# DATE ELEMENT: Feb 21, 2022 11:07 AM 
 
 META_PATH = R"C:\Users\ashun\AppData\Local\Google\Chrome\User Data\Default\Extensions\nmmhkkegccagdldgiimedpiccmgmieda\extension_10_9_0_0.crx"
-OSEA_URL = "https://opensea.io/"
+OSEA_URL = 'https://opensea.io/'
+SECRET = True
+BANNER_STATUS = [
+    "Your offer was submitted successfully!",
+    "Failed to fetch",
+    "API Error 400"
+]
 
 info_logger = logging.getLogger(f"info")
 info_logger.setLevel(logging.INFO)
@@ -51,6 +56,18 @@ def setUpDriver() -> webdriver.Chrome:
     driver.set_window_size(1500,1080)
     driver.get(OSEA_URL)
     # driver = uc.Chrome(version=96, options=chrome_options, use_subprocess=True)
+    return driver
+
+def setup_secret_driver() -> webdriver.Chrome:
+    print("setting up driver")
+    PATH = R"C:\Users\ashun\chromedriver"
+    chrome_options = uc.ChromeOptions()
+    chrome_options.add_argument(R"--load-extension=C:\Users\ashun\metamask-chrome-10.11.2")
+    # chrome_options.add_argument("user-agent=Chrome/100.0.4896.60")
+    driver = uc.Chrome(version=100, options=chrome_options, use_subprocess=True, driver_executable_path=PATH)
+    sleep(5)
+    driver.set_window_size(1500,1080)
+    driver.get(OSEA_URL)
     return driver
 
 def extract_api_info(url, my_dict, slug):
@@ -96,10 +113,10 @@ def date_data():
     date_str = f"{month_dict[int(month)][0]} {day.lstrip('0')}"
     return search_day, date_str, edge_case
 
-def meta_login(driver, password, recovery):
+def meta_login(driver: webdriver.Chrome, password, recovery):
     # This function will log into metamask and then connect it with OpenSea
     # Wallet details
-    WebDriverWait(driver, 5).until(
+    WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.XPATH, '//button[text()="Get Started"]')),
         message = "meta_login: Could not find Get Started button"
     ).click()
@@ -111,17 +128,31 @@ def meta_login(driver, password, recovery):
         EC.presence_of_element_located((By.XPATH, '//button[text()="No Thanks"]')),
         message = "meta_login: Could not find No Thanks button"
     ).click()
+
+    WebDriverWait(driver, 5).until(
+        EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Enter your Secret Recovery Phrase"]')),
+        message = "meta_login: Could not find Recovery input"
+    ).send_keys(recovery)
+
+    WebDriverWait(driver, 5).until(
+        EC.presence_of_element_located((By.XPATH, '//input[@id="password"]')),
+        message = "meta_login: Could not find Password input"
+    ).send_keys(password)
+    """ sleep(500)
     try:
         inputs = driver.find_elements(By.XPATH, '//input')
         inputs[0].send_keys(recovery)
-        inputs[1].send_keys(password)
         inputs[2].send_keys(password)
     except:
         error_logger.error("meta_login: Could not input recovery and password")
-        raise TimeoutError
+        raise TimeoutError """
 
     WebDriverWait(driver, 5).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, '.first-time-flow__terms')),
+        EC.presence_of_element_located((By.XPATH, '//input[@id="confirm-password"]')),
+        message = "meta_login: Could not find element"
+    ).send_keys(password)
+    WebDriverWait(driver, 5).until(
+        EC.presence_of_element_located((By.XPATH, '//*[@id="create-new-vault__terms-checkbox"]')),
         message = "meta_login: Could not find element"
     ).click()
     WebDriverWait(driver, 5).until(
@@ -134,11 +165,13 @@ def meta_login(driver, password, recovery):
     ).click()
     info_logger.info("Signed into Metamask")
 
-def opensea_login(driver, osea, metamask_window):
+def opensea_login(driver: webdriver.Chrome, osea, metamask_window):
     driver.switch_to.window(osea)
+    driver.refresh()
+    sleep(2)
     WebDriverWait(driver, 10).until(
-    EC.presence_of_element_located((By.XPATH, '//*[text()="account_balance_wallet"]')),
-    message = "opensea_login: Could not find wallet icon"
+        EC.presence_of_element_located((By.XPATH, '//*[text()="account_balance_wallet"]')),
+        message = "opensea_login: Could not find wallet icon"
     ).click()
     # Gotta do this because Osea randomizes other tags and positioning of elements.
     sleep(2)
@@ -174,42 +207,75 @@ def opensea_login(driver, osea, metamask_window):
     ).click()
     info_logger.info("Signed into Opensea")
 
-def find_sign_meta_window(driver, osea, metamask_window):
+def check_failed_fetch(driver: webdriver.Chrome):
+    try:
+        WebDriverWait(driver, 2).until(
+            EC.presence_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]')),
+        )
+        error_logger.error("Failed Fetch Detected")
+        driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
+        return True
+    except:
+        return False
+
+def check_auth_sig(driver: webdriver.Chrome, osea, metamask):
+    # every 24 hours, opensea requires you to sign an authentication 
+    try:
+        WebDriverWait(driver, 2).until(
+            EC.presence_of_element_located((By.XPATH, '//*[text()="Authentication required"]')),
+        )
+        print("Authentication required found")
+        sleep(2)
+        child_windows = driver.window_handles
+        for w in child_windows:
+            if (w!= osea) and (w != metamask):
+                driver.switch_to.window(w)
+        WebDriverWait(driver, 1).until(
+            EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]')),
+        ).click()
+        driver.switch_to.window(osea)
+    except:
+        return
+
+def find_sign_meta_window(driver: webdriver.Chrome, osea, metamask_window):
     window_check = 0
-    sleep(1)
+    check_failed_fetch(driver)
+    sleep(randint(3,5))
     while True:
-        try:
-            WebDriverWait(driver, 2).until(
-                EC.presence_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]')),
-            )
-            driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
-            error_logger.error("FAILED TO FETCH! RECLICKED OFFER BUTTON")
-        except:
-            sleep(1)
+        for i in range(2):
+            sleep(2)
             not_found = True
             child_windows = driver.window_handles
             for w in child_windows:
                 if w != osea and w != metamask_window:
                     not_found = False
                     driver.switch_to.window(w)
-                    WebDriverWait(driver, 1).until(
-                        EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]')),
-                        message="find_sign_meta_window: Can't find Sign button"
-                    ).click()
-                    driver.switch_to.window(osea)
-                    return True
+                    try:
+                        WebDriverWait(driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, '//*[@data-testid="signature-request-scroll-button"]')),
+                            message="find_sign_meta_window: Can't find scroll button"
+                        ).click()
+                        sleep(1)
+                        WebDriverWait(driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]')),
+                            message="find_sign_meta_window: Can't find Sign button"
+                        ).click()
+                        driver.switch_to.window(osea)
+                        return True
+                    except:
+                        return False
         if not_found:
             # reclick the make offer button if can't find metamask window
             sleep(5)
             driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
             error_logger.error("offer button reclicked")
                     
-        if window_check > 3:
+        if window_check == 2:
             error_logger.error("Can't find metamask tx prompt")
             return False
         window_check += 1
 
-def determine_offer(driver, URL, royalty_deduct, api_db, slug):
+def determine_offer(driver: webdriver.Chrome, URL, royalty_deduct, api_db, slug):
     profit_margin = 0.11
     offer_objects = driver.find_elements(By.XPATH, "//div[@class='Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount']")
     offers = []
@@ -230,7 +296,49 @@ def determine_offer(driver, URL, royalty_deduct, api_db, slug):
     if (floor * royalty_deduct) - (top_offer + 0.001) > profit_margin:
         return round(top_offer + 0.001, 4) 
 
-def bid_date_input(driver, date, day, bid_dur, edge_case):
+def find_status_banner(driver: webdriver.Chrome):
+    # Find the banner status after signing a transaction
+    #
+    try:
+        banner_divs = WebDriverWait(driver, 5).until(
+                    EC.presence_of_all_elements_located((By.XPATH, '//div[@role="alert"]//div')),
+                    #EC.presence_of_element_located((By.XPATH, '//div[@class="Blockreact__Block-sc-1xf18x6-0 Flexreact__Flex-sc-1twd32i-0 jffCaG jYqxGr"]')),
+                    message="find_status_banner: Could not find banner divs"
+        )
+        for div in banner_divs:
+            for status in BANNER_STATUS:
+                if status in div.text:
+                    return div.text
+    except:
+        return False
+
+def handle_status(driver: webdriver.Chrome, osea, metamask, banner_text, fetch_failed):
+    # fetch_failed used for the recursive call
+    if banner_text:
+        # if successful log into db
+        if "success" in banner_text:
+            return True
+        # if it has failed to fetch, we will try once again. If it fails again, we will return an error
+        elif "fetch" in banner_text and not fetch_failed:
+            sleep(randint(2,4))
+            WebDriverWait(driver, 2).until(
+                EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]')),
+                message="place_bid: Could not find Make Offer button (during failed to fetch handle)"
+            ).click()
+            window = find_sign_meta_window(driver, osea, metamask)
+            if window:
+                status = find_status_banner(driver)
+                return handle_status(driver, osea, metamask, status, True)
+        elif "fetch" in banner_text and fetch_failed:
+            return False
+        else:
+            error_logger.error(banner_text)
+            return "API ERROR"
+    else:
+        error_logger.error("Could not find banner text")
+    return False
+
+def bid_date_input(driver: webdriver.Chrome, date, day, bid_dur, edge_case):
     # Date in the form: Feb 21, 2022 11:07 AM
     WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, f'//input[@id="start-time"]')),
@@ -270,27 +378,30 @@ def bid_date_input(driver, date, day, bid_dur, edge_case):
     else:
         input_element.send_keys(str(bid_time))
 
-def place_bid(driver, osea, metamask_window, slug, royalties, address, bid_dur, bid_lock):
-    # function that from a collection's homepage, searches a number, clicks on correct nft, makes a bid lasting bid_dur and signs the transaction
+def place_bid(driver: webdriver.Chrome, osea, metamask_window, slug, royalties, address, bid_dur, bid_lock: threading.Lock):
     api_db = SqliteDict('./api_db.sqlite', autocommit=True)
-    bid_db = SqliteDict(f'./{slug}.sqlite', autocommit=True)
+    bid_db = SqliteDict(f'./bid_db.sqlite', autocommit=True)
     try:
-        keyword = str(randint(1,9999))
-        while(keyword in bid_db):
-            keyword = str(randint(1,9999))
-        bid_url = f"https://opensea.io/assets/{address}/{keyword}"
+        list_number = randint(1,10000)
+        keyword = f"{slug}:{list_number}"
+        while(keyword in bid_db or (list_number in api_db[f"{slug}_rare_list"])):
+            list_number = randint(1,10000)
+            keyword = f"{slug}:{list_number}"
+        bid_url = f"https://opensea.io/assets/{address}/{list_number}"
         driver.get(bid_url)
         sleep(randint(2,3))
         offer = determine_offer(driver, f"https://api.opensea.io/collection/{slug}", royalties, api_db, slug)
         if not offer:
-            sleep(randint(1,3))
+            sleep(randint(3,5))
             error_logger.error("NOT PROFITABLE")
             return "NOT PROFITABLE"
         WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//*[text()="Make offer"]')),
             message="place_bid: Could not find Make Offer button"
         ).click()
-        sleep(randint(2,4))
+        check_auth_sig(driver, osea, metamask_window)
+        
+        sleep(randint(1,3))
         amount_bar = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.XPATH, '//input[@placeholder="Amount"]')),
             message="place_bid: Could not find Amount input"
@@ -310,50 +421,28 @@ def place_bid(driver, osea, metamask_window, slug, royalties, address, bid_dur, 
         # info_logger.info(f"DATE ELEMENT:{curr_date}")
         actions.move_to_element(date_element).click()
         actions.perform()
-        """ if edge_case:
-            # change month
-            info_logger.info("EDGE CASE")
-            WebDriverWait(driver, 3).until(
-                EC.presence_of_element_located((By.XPATH, f'//*[@aria-label="Next month"]')),
-                message="place_bid: Could not find Next Month button (edge case)"
-            ).click()
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, f'//button[text()="{int(day)}"]')),
-                message="place_bid: Could not find day button (edge case)"
-            ).click() """
         bid_date_input(driver, curr_date, day, bid_dur, edge_case)
-        try:
+        with bid_lock:
             actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
             actions.perform()
             actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
             actions.perform()
-        except:
-            error_logger.error("place_bid: Make Offer ActionChain Error")
-        # bid_lock.acquire()
-        window_found = find_sign_meta_window(driver, osea, metamask_window)
-        # bid_lock.release()
-        # if the signing window could not be found
-        if not window_found:
-            print("place_bid: Could not find metamask window")
-            raise Exception
-        driver.switch_to.window(osea)
-        while True:
-            try:
-                WebDriverWait(driver, 2).until(
-                    EC.visibility_of_element_located((By.XPATH, '//*[text()="Your offer was submitted successfully!"]'))
-                )
-                break
-            except:
-                element = WebDriverWait(driver, 2).until(
-                    EC.visibility_of_element_located((By.XPATH, '//*[contains(text(), "API Error 400")]'))
-                )
-                error_logger.error(element.text)
-                return "CRITICAL ERROR"
-        sleep(randint(1,3))
-        bid_db[keyword] = datetime.now() # enter successfull bid into database
-        return True
+
+            window_found = find_sign_meta_window(driver, osea, metamask_window)
+            driver.switch_to.window(osea)
+            banner_text = find_status_banner(driver)
+            status = handle_status(driver, osea, metamask_window, banner_text, False)
+        # if the signing window could not be found, we try again one time
+        if status is True:
+            sleep(randint(2,3))
+            bid_db[keyword] = datetime.now() # enter successfull bid into database
+            return True
+        elif status == "API ERROR":
+            return "API ERROR"
+        else:
+            return False
     except Exception as e:
-        error_logger.error(f"ERROR{e}")
+        error_logger.error(f"ERROR: {e}")
         sleep(randint(4,7))
         return False
     finally:
@@ -387,9 +476,9 @@ def main(slug, royalties, address, bid_dur, bid_lock):
 
     load_dotenv()
     recovery = file_crypt.decrypt_file_contents("encrypted.txt")
-    password = os.getenv('PASS') 
-    driver = setUpDriver()
-    driver.implicitly_wait(2)
+    password = os.getenv('PASS')
+    driver = setup_secret_driver() if SECRET else setUpDriver()
+    sleep(5)
     info_logger.info(f"Current bids: {bid_count(bid_db, bid_dur)}")
     osea = driver.current_window_handle
     child_windows = driver.window_handles
@@ -402,20 +491,20 @@ def main(slug, royalties, address, bid_dur, bid_lock):
     meta_login(driver, password, recovery)
     driver.switch_to.window(osea)
     opensea_login(driver, osea, metamask_window)
-    error_count = error_reset = curr_txs = total_txs = 0
+    error_count = error_reset = curr_txs = no_profit = total_txs = 0
     while True:
         driver.switch_to.window(osea)
         bid_status = place_bid(driver, osea, metamask_window, slug, royalties, address, bid_dur, bid_lock)
         # sleeps or ends bot based on error count
-        if bid_status == "CRITICAL ERROR":
-            error_logger.error("Critical Error detected. Shutting off bot.")
+        if bid_status == "API ERROR":
+            error_logger.error("Critical Error detected. Shutting off bot for an hour.")
             error_logger.error(datetime.now().strftime("%H:%M:%S"))
-            return
+            sleep(3600)
         elif bid_status == "NOT PROFITABLE":
-            continue
-        elif bid_status == "FAILED TO FETCH":
-            error_logger.error(bid_status)
-            sleep(120)
+            no_profit += 1
+            if no_profit > 10:
+                sleep(3600)
+            no_profit = 0
             continue
         elif not bid_status:
             # 5 errors in a row causes error reset
@@ -435,10 +524,9 @@ def main(slug, royalties, address, bid_dur, bid_lock):
                     error_count = 0
         else:
             error_count = 0
+            no_profit = 0
             total_txs += 1
             curr_txs += 1
-            # if total_txs > 1000:
-            #     info_logger.info("Total txs sent. Ending program.")
             if curr_txs % 200 == 0:
                 info_logger.info(f'"Stretching" {datetime.now()}')
                 info_logger.info(f"Oustanding bids: {bid_count(bid_db, bid_dur)}")

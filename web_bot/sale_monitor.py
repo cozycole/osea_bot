@@ -30,16 +30,21 @@ def poll_etherscan(address_to_poll):
     api_db = SqliteDict('./api_db.sqlite', autocommit=True)
     block_num = api_db["POLLING_BLOCK"]
     # print(f"Polling for {address_to_poll} starting at block number {block_num} ")
-    URL = f"https://api.etherscan.io/api?module=account&action=tokennfttx&address={address_to_poll}&startblock={block_num}&endblock=999999999&sort=asc&apikey=NF59JSQ23GUIN9CS6TR1N3ME42PXIH5B8T"
+    # URL = f"https://api.etherscan.io/api?module=account&action=tokennfttx&address={address_to_poll}&startblock={block_num}&endblock=999999999&sort=asc&apikey=NF59JSQ23GUIN9CS6TR1N3ME42PXIH5B8T"
+    URL = 'https://eth-mainnet.alchemyapi.io/v2/OmzU66VrBnUtc4pYRCo9cvujvrlLBl9k/getNFTs/?owner=0xd73d5893C710a2a7f155AF27f1E74eF08070502C'
     try:
         response = requests.get(URL).json()
-    except:
-        print("ETHERSCAN ERROR")
+    except Exception as e:
+        print("ALC API ERROR", e)
         return False
-    if response["message"] == "No transactions found":
+    if not response["ownedNfts"]:
+        print("NO NFTS YET")
         return False
+    else:
+        print("WE GOT ONE!")
+    return True
     # Check now to see if the transactions are IN or OUT (is to == MY_ADDRESS)
-    in_txns = []
+    """ in_txns = []
     for txn in response["result"]:
         if txn["to"] == address_to_poll:
             in_txns.append(txn)
@@ -48,7 +53,7 @@ def poll_etherscan(address_to_poll):
     # calling function should check if out_txns is empty or not
     # empty -> no outbound transactions, continue polling
     # not empty -> we got an nft 
-    return in_txns
+    return in_txns """
 
 def convert_to_ETH(driver: webdriver, meta_window):
     """
