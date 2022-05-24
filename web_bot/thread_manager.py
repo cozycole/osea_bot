@@ -19,7 +19,8 @@ import sale_monitor as sm
 collection_dict = {
     "chick" : ("the-crypto-chicks", 0.925, "0x1981cc36b59cffdd24b01cc5d698daa75e367e04"),
     "lion" : ("lazy-lions", 0.905, "0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0"),
-    "gape" : ("gamblingapes", 0.925, "0x90ca8a3eb2574f937f514749ce619fdcca187d45")
+    "gape" : ("gamblingapes", 0.925, "0x90ca8a3eb2574f937f514749ce619fdcca187d45"),
+    "coolman" : ("coolmans-universe", 0.925, "0xa5c0bd78d1667c13bfb403e2a3336871396713c5")
 }
 
 def get_thread_args():
@@ -40,8 +41,6 @@ def start_threads(thread_args, num):
     return tids
 
 def main():
-    os.system("del logs\*.log /a /s")
-    os.system("del *.log /a /s")
     # logging.basicConfig(filename="MAIN_error.log", level=logging.ERROR)
     load_dotenv()
     print(f"DAEMON THREAD{threading.get_ident()}")

@@ -26,6 +26,8 @@ BANNER_STATUS = [
     "Failed to fetch",
     "API Error 400"
 ]
+os.system("break>logs\info.log")
+os.system("break>logs\error.log")
 
 info_logger = logging.getLogger(f"info")
 info_logger.setLevel(logging.INFO)
@@ -240,7 +242,7 @@ def check_auth_sig(driver: webdriver.Chrome, osea, metamask):
 def find_sign_meta_window(driver: webdriver.Chrome, osea, metamask_window):
     window_check = 0
     check_failed_fetch(driver)
-    sleep(randint(3,5))
+    sleep(randint(1,2))
     while True:
         for i in range(2):
             sleep(2)
@@ -276,7 +278,7 @@ def find_sign_meta_window(driver: webdriver.Chrome, osea, metamask_window):
         window_check += 1
 
 def determine_offer(driver: webdriver.Chrome, URL, royalty_deduct, api_db, slug):
-    profit_margin = 0.11
+    profit_margin = 0.08
     offer_objects = driver.find_elements(By.XPATH, "//div[@class='Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount']")
     offers = []
     for offer in offer_objects:
@@ -292,8 +294,9 @@ def determine_offer(driver: webdriver.Chrome, URL, royalty_deduct, api_db, slug)
     , 3) > max(offers)):
         return round(floor * 0.8, 3)
     top_offer = max(offers)
-    # info_logger.info(f"{floor * royalty_deduct} - {top_offer + 0.001} = {(floor * royalty_deduct) - (top_offer + 0.001)} > {profit_margin} ??")
-    if (floor * royalty_deduct) - (top_offer + 0.001) > profit_margin:
+    info_logger.info(f"{floor * royalty_deduct} - {top_offer + 0.001} = {(floor * royalty_deduct) - (top_offer + 0.001)} > {profit_margin} is {((floor * royalty_deduct) - (top_offer + 0.001)) >= profit_margin}")
+    if ((floor * royalty_deduct) - (top_offer + 0.001)) >= profit_margin:
+        print("OUT BID!!")
         return round(top_offer + 0.001, 4) 
 
 def find_status_banner(driver: webdriver.Chrome):
@@ -472,7 +475,7 @@ def main(slug, royalties, address, bid_dur, bid_lock):
     # Needed to create separate error logs for each thread
     suffix = threading.get_ident()
     info_logger.info(f"NEW THREAD STARTED:{suffix}")
-    bid_db = SqliteDict(f'./{slug}.sqlite', autocommit=True)
+    bid_db = SqliteDict(f'./bid_db.sqlite', autocommit=True)
 
     load_dotenv()
     recovery = file_crypt.decrypt_file_contents("encrypted.txt")

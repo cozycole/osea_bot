@@ -23,7 +23,7 @@ chrome_options.add_argument("--load-extension=/Users/colet/metamask-chrome-10.8.
 driver = uc.Chrome(version=96, options=chrome_options, use_subprocess=True)
 driver.get('https://opensea.io/assets/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/5790') """
 LOGGER.setLevel(logging.ERROR)
-# Need to create separate error logs for each process
+# Needed to create separate error logs for each process
 suffix = str(os.getpid())
 path_name = R"C:\Users\ashun\osea_bot\web_bot\error" + suffix + ".log"
 if os.path.exists(path_name):
@@ -39,7 +39,7 @@ COLL_URL = "https://opensea.io/collection/lazy-lions"
 RECOVERY = file_crypt.decrypt_file_contents("encrypted.txt")
 PASS = os.getenv('PASS')
 META_PATH = R"C:\Users\ashun\AppData\Local\Google\Chrome\User Data\Default\Extensions\nmmhkkegccagdldgiimedpiccmgmieda\extension_10_9_0_0.crx"
-BID_DB = SqliteDict('./bid_db.sqlite', autocommit=True)
+BID_DB = SqliteDict('./chicks.sqlite', autocommit=True)
 API_DB = SqliteDict('./api_db.sqlite', autocommit=True)
 
 def setUpDriver() -> webdriver.Chrome:
@@ -140,10 +140,10 @@ def meta_login(driver, osea, metamask_window):
         driver.find_element(By.XPATH, '//*[@id="app-content"]/div/div[1]/div/div[2]/div[1]/div/span').click()
         driver.find_element(By.XPATH, '//*[@id="app-content"]/div/div[2]/div/div[2]/div/li[1]/span').click()
     
-    driver.switch_to.window(osea)
+    """ driver.switch_to.window(osea)
     WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.XPATH, '//*[@id="__next"]/div[1]/div[1]/nav/ul/div[2]/li/button/i'))
-        ).click()
+        EC.presence_of_element_located((By.XPATH, '//*[text()="account_balance_wallet"]'))
+    ).click()
     # Gotta do this because Osea randomizes other tags and positioning of elements.
     images = driver.find_elements(By.TAG_NAME, 'img')
     MASK_IMG = "https://testnets.opensea.io/static/images/logos/metamask-alternative.png" if TEST_NET else "https://opensea.io/static/images/logos/metamask-alternative.png"
@@ -165,40 +165,39 @@ def meta_login(driver, osea, metamask_window):
         EC.presence_of_element_located((By.XPATH, '//button[text()="Next"]'))
     ).click()
     driver.find_element(By.XPATH, '//button[text()="Connect"]').click()
-    logging.info("Signed into Metamask")
+    logging.info("Signed into Metamask") """
 
 def find_sign_meta_window(driver, osea, metamask_window):
     window_check = 0
     sleep(2)
     while True:
-        """try:
+        try:
             WebDriverWait(driver, 2).until(
                 EC.presence_of_element_located((By.XPATH, '//*[text()="Failed to Fetch"]'))
             )
             driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
             logging.error("FAILED TO FETCH! RECLICKED OFFER BUTTON")
-        except: """
-        print("did not find failed to fetch")
-        sleep(3)
-        not_found = True
-        child_windows = driver.window_handles
-        for w in child_windows:
-            if w != osea and w != metamask_window:
-                not_found = False
-                driver.switch_to.window(w)
-                try:
-                    # Sometimes has a contract that needs to be signed.
-                    WebDriverWait(driver, 1).until(
-                        EC.presence_of_element_located((By.XPATH, '//*[contains(text(), "Wyvern Exchange Contract")]'))
-                    )
-                    WebDriverWait(driver, 2).until(
-                        EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
-                    ).click()
-                    logging.error("Wyvern Exchange Pop-Up")
-                    driver.switch_to.window(osea)
-                    driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
-                    break
-                except:
+        except:
+            sleep(2)
+            not_found = True
+            child_windows = driver.window_handles
+            for w in child_windows:
+                if w != osea and w != metamask_window:
+                    not_found = False
+                    driver.switch_to.window(w)
+                    """ try:
+                        # Sometimes has a contract that needs to be signed.
+                        WebDriverWait(driver, 1).until(
+                            EC.presence_of_element_located((By.XPATH, '//*[contains(text(), "Wyvern Exchange Contract")]'))
+                        )
+                        WebDriverWait(driver, 2).until(
+                            EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
+                        ).click()
+                        logging.error("Wyvern Exchange Pop-Up")
+                        driver.switch_to.window(osea)
+                        driver.find_element(By.XPATH, '//button[text()="Make Offer"]').click()
+                        break
+                    except: """ 
                     WebDriverWait(driver, 1).until(
                         EC.presence_of_element_located((By.XPATH, '//button[text()="Sign"]'))
                     ).click()
@@ -215,7 +214,7 @@ def find_sign_meta_window(driver, osea, metamask_window):
         window_check += 1
 
 def determine_offer(driver, URL):
-    royalty_deduct = 0.935
+    royalty_deduct = 0.925
     profit_margin = 0.1
     offer_objects = driver.find_elements(By.XPATH, "//div[@class='Overflowreact__OverflowContainer-sc-7qr9y8-0 jPSCbX Price--amount']")
     offers = []
@@ -227,9 +226,9 @@ def determine_offer(driver, URL):
     api_dict = extract_api_info(URL, API_DB)
     floor = api_dict["floor_price"]
     if (len(offers) == 0):
-        return round(floor * 0.8, 3)
-    if (round(floor * 0.8, 3) > max(offers)):
-        return round(floor * 0.8, 3)
+        return round(floor * 0.75, 3)
+    if (round(floor * 0.75, 3) > max(offers)):
+        return round(floor * 0.75, 3)
     # the 7.5% royalties are specific to Gambling Apes
     top_offer = max(offers)
     print(f"{floor * royalty_deduct} - {top_offer + 0.001} = {(floor * royalty_deduct) - (top_offer + 0.001)} > 0.07 ??")
@@ -243,10 +242,11 @@ def place_bid(driver, osea, metamask_window):
         # make sure we haven't already bid on this ape
         while(keyword in BID_DB):
             keyword = str(randint(1,9999))
-        bid_url = f"https://opensea.io/assets/0x8943c7bac1914c9a7aba750bf2b6b09fd21037e0/{keyword}"
+        bid_url = f"https://opensea.io/assets/0x1981cc36b59cffdd24b01cc5d698daa75e367e04/{keyword}"
         driver.get(bid_url)
         sleep(randint(2,4))
-        offer = determine_offer(driver, "https://api.opensea.io/collection/lazy-lions")
+        # offer = determine_offer(driver, "https://api.opensea.io/collection/the-crypto-chicks")
+        offer = 0.1271
         if not offer:
             sleep(randint(1,3))
             logging.error("NOT PROFITABLE")
@@ -297,13 +297,10 @@ def place_bid(driver, osea, metamask_window):
             input_element.send_keys(Keys.RIGHT)
             input_element.send_keys(Keys.RIGHT)
             input_element.send_keys('p')
-        print("got here 1")
         actions.move_to_element(driver.find_element(By.XPATH, f'//*[text()="Make an offer"]')).click()
         actions.perform()
-        print("got here 2")
         actions.move_to_element(driver.find_element(By.XPATH, '//button[text()="Make Offer"]')).click()
         actions.perform()
-        print("performed actions")
         window_found = find_sign_meta_window(driver, osea, metamask_window)
         # if the signing window could not be found
         if not window_found:
@@ -367,6 +364,7 @@ def main():
     meta_login(driver, osea, metamask_window)
     driver.switch_to.window(osea)
     error_count = error_reset = curr_txs = total_txs = 0
+    sleep(1000)
     while True:
         driver.switch_to.window(osea)
         bid_status = place_bid(driver, osea, metamask_window)
@@ -402,7 +400,7 @@ def main():
                 print("Oustanding bids:", bid_count(BID_DB))
                 print("Transaction count:", total_txs)
                 sleep(randint(500, 1000))
-            elif curr_txs % 30 == 0:
+            elif curr_txs % 40 == 0:
                 print('"Coffee Break"')
                 print("Transaction count:", total_txs)
                 sleep(randint(60, 120))

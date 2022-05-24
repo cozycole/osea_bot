@@ -10,3 +10,5 @@ web_bot/bid_db.sqlite
 web_bot/debug.log
 web_bot/info.log
 web_bot/my_db.sqlite
+*.bat
+*.log

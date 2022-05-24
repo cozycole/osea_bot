@@ -25,6 +25,7 @@ def encrypt_pass(file_str):
     
 
 def decrypt_file_contents(file_str):
+    # below is code for inputting a password to start the program with the wallet
     """ while True:
         try:
             digest = hashes.Hash(hashes.SHA256())

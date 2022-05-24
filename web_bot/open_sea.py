@@ -32,7 +32,7 @@ OSEA_URL = "https://testnets.opensea.io/" if TEST_NET else "https://opensea.io/"
 COLL_URL = "https://opensea.io/assets/0x90ca8a3eb2574f937f514749ce619fdcca187d45/2787" if TEST_NET else "https://opensea.io/collection/gamblingapes"
 RECOVERY = file_crypt.decrypt_file_contents("encrypted.txt")
 PASS = os.getenv('PASS')
-META_PATH = "/Users/colet/Library/Application Support/Google/Chrome/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/1.0.0.6_0/extension_10_8_1_0.crx"
+META_PATH = r"/Users/colet/Library/Application Support/Google/Chrome/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/1.0.0.6_0/extension_10_8_1_0.crx"
 BID_DB = SqliteDict('./bid_db.sqlite', autocommit=True)
 API_DB = SqliteDict('./api_db.sqlite', autocommit=True)
 
@@ -89,7 +89,7 @@ def date_data():
     date_str = f"{month_dict[int(month)][0]} {day}"
     return day, date_str
 
-def metaLogIn(driver, osea, metamask_window):
+def meta_login(driver, osea, metamask_window):
     # This function will log into metamask and then connect it with OpenSea
     # Wallet details
     WebDriverWait(driver, 5).until(
@@ -325,7 +325,7 @@ def main():
             driver.switch_to.window(w)
             metamask_window = w
     # must be in the metamask window before calling
-    metaLogIn(driver, osea, metamask_window)
+    meta_login(driver, osea, metamask_window)
     driver.switch_to.window(osea)
     error_count = error_reset = curr_txs = total_txs = 0
     error_time = datetime.now()
