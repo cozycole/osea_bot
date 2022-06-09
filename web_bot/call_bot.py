@@ -4,7 +4,6 @@ import discord
 from dotenv import load_dotenv
 
 # So maybe instead of calling me, if it notices a discord noti, it will go check my collected nfts page. If one is there it will automatically list it for sale. 
-# URL for account: https://opensea.io/0xb91d96ca297e06f0db299eb067b236bcf37feb29
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 # load discord object 
