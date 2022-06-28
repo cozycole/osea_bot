@@ -16,7 +16,7 @@ twilio_client = Client(account_sid, auth_token)
 @discord_client.event
 async def on_ready():
     for guild in discord_client.guilds:
-        if guild.name == "cozycole":
+        if guild.name == "USER":
             break
     
     print(
@@ -31,7 +31,7 @@ async def on_message(message):
     
     call = twilio_client.calls.create(
                         twiml='<Response><Say>Ahoy there!</Say></Response>',
-                        to='+15415056058',
+                        to='NUMBER',
                         from_='+14844303657'
                     )
     
